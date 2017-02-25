@@ -1,0 +1,5 @@
+build
+target
+*.class
+*.txt
+input_25kk.txt

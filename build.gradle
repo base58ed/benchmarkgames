@@ -1,0 +1,31 @@
+group 'net.benchmarkgames'
+version '0.1'
+
+buildscript {
+	ext.kotlinVersion = '1.1.0-rc-91'
+	ext.kotlinCoroutinesVersion = '0.11-rc'
+
+	repositories {
+		maven { url 'http://dl.bintray.com/kotlin/kotlin-eap-1.1' }
+		mavenCentral()
+	}
+	dependencies {
+		classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion"
+	}
+}
+
+apply plugin: 'java'
+apply plugin: 'kotlin'
+
+sourceCompatibility = 1.8
+
+repositories {
+	maven { url 'http://dl.bintray.com/kotlin/kotlin-eap-1.1' }
+	mavenCentral()
+}
+
+dependencies {
+	compile "org.jetbrains.kotlin:kotlin-stdlib-jre8:$kotlinVersion"
+	compile "org.jetbrains.kotlinx:kotlinx-coroutines-core:$project.kotlinCoroutinesVersion"
+	compile "it.unimi.dsi:fastutil:7.0.12"
+}
