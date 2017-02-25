@@ -1,11 +1,11 @@
 import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap
-import kotlinx.coroutines.experimental.CommonPool
-import kotlinx.coroutines.experimental.Deferred
-import kotlinx.coroutines.experimental.async
-import kotlinx.coroutines.experimental.runBlocking
 import java.io.*
 import java.nio.charset.StandardCharsets
-import java.util.*
+import java.util.ArrayList
+import java.util.Locale
+import java.util.concurrent.Callable
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
 import kotlin.experimental.and
 
 object KNucleotide {
@@ -14,6 +14,30 @@ object KNucleotide {
 	
 	internal class Result(var keyLength: Int) {
 		var map = Long2IntOpenHashMap()
+	}
+	
+	internal fun createFragmentTasks(sequence: ByteArray,
+																	 fragmentLengths: IntArray): ArrayList<Callable<Result>> {
+		val tasks = ArrayList<Callable<Result>>()
+		for (fragmentLength in fragmentLengths) {
+			(0..fragmentLength - 1)
+				//				.map { it }
+				.mapTo(tasks) { Callable { createFragmentMap(sequence, it, fragmentLength) } }
+		}
+		return tasks
+	}
+	
+	internal fun createFragmentMap(sequence: ByteArray, offset: Int, fragmentLength: Int): Result {
+		val res = Result(fragmentLength)
+		val map = res.map
+		val lastIndex = sequence.size - fragmentLength + 1
+		var index = offset
+		while (index < lastIndex) {
+			map.addTo(getKey(sequence, index, fragmentLength), 1)
+			index += fragmentLength
+		}
+		
+		return res
 	}
 	
 	internal fun sumTwoMaps(map1: Result, map2: Result): Result {
@@ -36,19 +60,19 @@ object KNucleotide {
 	}
 	
 	@Throws(Exception::class)
-	internal fun writeCount(futures: List<Deferred<Result>>, nucleotideFragment: String): String = runBlocking(CommonPool) {
+	internal fun writeCount(futures: List<Future<Result>>, nucleotideFragment: String): String {
 		val key = toCodes(nucleotideFragment.toByteArray(StandardCharsets.ISO_8859_1),
 											nucleotideFragment.length)
 		val k = getKey(key, 0, nucleotideFragment.length)
 		var count = 0
 		for (future in futures) {
-			val f = future.await()
+			val f = future.get()
 			if (f.keyLength == nucleotideFragment.length) {
 				count += f.map.get(k)
 			}
 		}
 		
-		count.toString() + "\t" + nucleotideFragment + '\n'
+		return count.toString() + "\t" + nucleotideFragment + '\n'
 	}
 	
 	/**
@@ -116,43 +140,25 @@ object KNucleotide {
 		return toCodes(bytes, position)
 	}
 	
-	internal fun createFragmentMap(sequence: ByteArray, offset: Int, fragmentLength: Int): Deferred<Result> = async(CommonPool) {
-		val res = Result(fragmentLength)
-		val map = res.map
-		val lastIndex = sequence.size - fragmentLength + 1
-		var index = offset
-		while (index < lastIndex) {
-			map.addTo(getKey(sequence, index, fragmentLength), 1)
-			index += fragmentLength
-		}
-		
-		res
-	}
-	
-	internal fun createFragmentTasks(sequence: ByteArray,
-																	 fragmentLengths: IntArray): ArrayList<Deferred<Result>> {
-		val tasks = ArrayList<Deferred<Result>>()
-		for (fragmentLength in fragmentLengths) {
-			(0..fragmentLength - 1)
-				.mapTo(tasks) {  createFragmentMap(sequence, it, fragmentLength) }
-		}
-		return tasks
-	}
 }
-
-fun main(args: Array<String>) = runBlocking(CommonPool) {
+fun main(args: Array<String>) {
 	val sequence = KNucleotide.read(
 		FileInputStream("${System.getProperty("user.dir")}/src/main/resources/input_25kk.txt"))
+	
 	val begin = System.nanoTime()
 	
+	val pool = Executors.newFixedThreadPool(Runtime.getRuntime()
+																						.availableProcessors())
 	val fragmentLengths = intArrayOf(1, 2, 3, 4, 6, 12, 18)
-	val futures = KNucleotide.createFragmentTasks(sequence, fragmentLengths)
+	val futures = pool.invokeAll(KNucleotide.createFragmentTasks(sequence,
+																															 fragmentLengths))
+	pool.shutdown()
 	
 	val sb = StringBuilder()
 	
-	sb.append(KNucleotide.writeFrequencies(sequence.size.toFloat(), futures[0].await()))
+	sb.append(KNucleotide.writeFrequencies(sequence.size.toFloat(), futures[0].get()))
 	sb.append(KNucleotide.writeFrequencies((sequence.size - 1).toFloat(),
-																				 KNucleotide.sumTwoMaps(futures[1].await(), futures[2].await())))
+																				 KNucleotide.sumTwoMaps(futures[1].get(), futures[2].get())))
 	
 	val nucleotideFragments = arrayOf("GGT", "GGTA", "GGTATT", "GGTATTTTAATT", "GGTATTTTAATTTATAGT")
 	for (nucleotideFragment in nucleotideFragments) {
@@ -162,4 +168,3 @@ fun main(args: Array<String>) = runBlocking(CommonPool) {
 	print(sb)
 	println((System.nanoTime() - begin).toDouble() / 1000_000_000.toDouble())
 }
-
